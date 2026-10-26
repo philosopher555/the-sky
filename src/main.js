@@ -3,6 +3,9 @@ import { FlightGame } from './game.js';
 import { NetworkManager } from './network.js';
 
 const interfaceRoot = document.querySelector('#interface');
+if (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches) {
+	document.documentElement.classList.add('touch-input');
+}
 const storedCoins = Number(localStorage.getItem('skyline-coins')) || 0;
 const storedName = localStorage.getItem('skyline-pilot') || `PILOT-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 localStorage.setItem('skyline-pilot', storedName);

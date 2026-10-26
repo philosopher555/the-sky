@@ -115,6 +115,9 @@ kbd { padding: 3px 6px; border: 1px solid rgba(178, 215, 213, .25); color: #d2e1
 .offline-alert b { color: #fff; font-family: "Orbitron", sans-serif; }
 .touch-controls { position: absolute; right: 0; bottom: 0; left: 0; display: none; align-items: flex-end; justify-content: space-between; padding: 16px 34px 26px; pointer-events: auto; }
 .game-hud.touch-controls-visible .touch-controls { display: flex; }
+.touch-input .touch-controls { display: flex; }
+.touch-input .touch-toggle { display: none; }
+.touch-input .hud-left-bottom, .touch-input .hud-right-bottom, .touch-input .hud-help { display: none; }
 .joystick { width: 124px; display: grid; justify-items: center; gap: 5px; color: #a7bcba; font-size: 9px; touch-action: none; user-select: none; }
 .joystick-ring { position: relative; width: 112px; aspect-ratio: 1; border: 1px solid rgba(124, 205, 199, .38); border-radius: 50%; background: rgba(5, 17, 21, .3); }
 .joystick-ring::before { position: absolute; inset: 18px; border: 1px dashed rgba(124, 205, 199, .2); border-radius: 50%; content: ""; }
