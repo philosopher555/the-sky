@@ -127,7 +127,7 @@ function openPanel(name) {
 	if (name === 'pause') {
 		dialog.innerHTML = `<button class="dialog-close" data-action="resume" aria-label="继续">×</button><div class="eyebrow"><span class="eyebrow-line"></span> FLIGHT PAUSED</div><h2>暂离航线</h2><p>街谷还在下雨，等你回来。</p><div class="dialog-actions"><button class="primary-button" data-action="resume">继续飞行 <span class="button-arrow">↗</span></button><button class="secondary-button" data-action="home">退出比赛</button></div>`;
 	} else if (name === 'help') {
-		dialog.innerHTML = `<button class="dialog-close" data-action="close" aria-label="关闭">×</button><div class="eyebrow"><span class="eyebrow-line"></span> FLIGHT MANUAL</div><h2>操作说明</h2><div class="control-list"><div><span>鼠标移动</span><b>转向 / 瞄准</b></div><div><span>鼠标左键</span><b>连续开火</b></div><div><span>W / S</span><b>加速 / 减速</b></div><div><span>SHIFT</span><b>短时加速</b></div><div><span>E</span><b>释放电磁脉冲</b></div><div><span>ESC</span><b>暂停 / 返回</b></div><div><span>方向键 / ENTER</span><b>菜单选择 / 确认</b></div><div><span>虚拟摇杆</span><b>桌面与手机均可拖动转向，右侧按钮开火/加速/使用道具</b></div></div><button class="primary-button dialog-wide" data-action="close">明白了 <span class="button-arrow">↗</span></button>`;
+		dialog.innerHTML = `<button class="dialog-close" data-action="close" aria-label="关闭">×</button><div class="eyebrow"><span class="eyebrow-line"></span> FLIGHT MANUAL</div><h2>操作说明</h2><div class="control-list"><div><span>鼠标移动</span><b>调节视角与飞行朝向</b></div><div><span>鼠标左键</span><b>沿视线连续开火</b></div><div><span>W / S</span><b>加速 / 减速</b></div><div><span>SHIFT</span><b>短时加速</b></div><div><span>E</span><b>释放电磁脉冲</b></div><div><span>ESC</span><b>暂停 / 返回</b></div><div><span>方向键 / ENTER</span><b>菜单选择 / 确认</b></div><div><span>手机</span><b>左侧摇杆调节视角，右侧按钮射击</b></div></div><button class="primary-button dialog-wide" data-action="close">明白了 <span class="button-arrow">↗</span></button>`;
 	} else if (name === 'settings') {
 		dialog.innerHTML = `<button class="dialog-close" data-action="close" aria-label="关闭">×</button><div class="eyebrow"><span class="eyebrow-line"></span> FLIGHT SETTINGS</div><h2>飞行设置</h2><div class="settings-list"><label><span>飞行员代号</span><input id="pilot-name" maxlength="16" value="${esc(state.name)}" /></label><label><span>音效</span><input id="sound-toggle" type="checkbox" ${state.sound ? 'checked' : ''} /></label><label><span>灵敏度</span><input id="sensitivity" type="range" min="60" max="140" value="${state.sensitivity}" /></label></div><button class="primary-button dialog-wide" data-action="save-settings">保存设置 <span class="button-arrow">↗</span></button>`;
 	} else if (name === 'shop') {
@@ -159,7 +159,7 @@ function handleGameEvent(type, detail = {}) {
 		document.querySelector('#flight-mode').textContent = state.room === 'connected' ? '1V1 DUEL' : 'AI CIRCUIT';
 		return;
 	}
-	if (type === 'shot') network.send({ type: 'shot', position: detail.position });
+	if (type === 'shot') network.send({ type: 'shot', position: detail.position, direction: detail.direction });
 	if (type === 'hit') {
 		state.coins += 5;
 		localStorage.setItem('skyline-coins', state.coins);
@@ -178,7 +178,7 @@ function handleGameEvent(type, detail = {}) {
 	if (type === 'player-back') showToast('系统恢复，重新接入战斗');
 	if (type === 'remote-hit') showToast('对手战机受击');
 	if (type === 'item') playTone(510, 0.16, 'triangle');
-	if (type === 'finish') finishMatch(detail.hits);
+	if (type === 'finish') finishMatch(detail.hits, detail.reason);
 }
 
 function handleNetworkStatus(update) {
@@ -217,7 +217,7 @@ function handleNetworkMessage(message) {
 	}
 }
 
-function finishMatch(hits) {
+function finishMatch(hits, reason) {
 	const reward = 10 + hits * 5;
 	state.coins += reward;
 	state.best = Math.max(state.best, hits);
@@ -227,6 +227,10 @@ function finishMatch(hits) {
 	document.querySelector('#result-coins').textContent = `+${reward}`;
 	document.querySelector('#coin-count').textContent = state.coins;
 	document.querySelector('#best-score').textContent = String(state.best).padStart(2, '0');
+	document.querySelector('#result-screen h2').textContent = reason === 'crash' ? '战机撞毁' : '飞行结束';
+	document.querySelector('#result-screen .result-panel > p').textContent = reason === 'crash'
+		? '撞上高楼，飞行提前结束。'
+		: '雨停之前，你留下了自己的记录。';
 	setScreen('result');
 }
 
@@ -356,6 +360,7 @@ interfaceRoot.addEventListener('pointerup', (event) => {
 		document.querySelector('#joystick').releasePointerCapture(event.pointerId);
 		game.input.steerX = 0;
 		game.input.steerY = 0;
+		game.setView(0, 0);
 		document.querySelector('#joystick-knob').style.transform = 'translate(0, 0)';
 	}
 });
@@ -373,6 +378,7 @@ function updateJoystick(event) {
 	document.querySelector('#joystick-knob').style.transform = `translate(${x}px, ${y}px)`;
 	game.input.steerX = x / radius;
 	game.input.steerY = -y / radius;
+	game.setView(game.input.steerX, game.input.steerY);
 }
 
 document.addEventListener('pointermove', (event) => {

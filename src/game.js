@@ -11,6 +11,14 @@ const PLANE_COLORS = { cyan: COLORS.cyan, pink: COLORS.pink, gold: COLORS.amber 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const random = (min, max) => min + Math.random() * (max - min);
 
+function distanceSquaredToSegment(point, start, end) {
+  const segment = end.clone().sub(start);
+  const lengthSquared = segment.lengthSq();
+  if (lengthSquared === 0) return point.distanceToSquared(start);
+  const progress = clamp(point.clone().sub(start).dot(segment) / lengthSquared, 0, 1);
+  return point.distanceToSquared(start.addScaledVector(segment, progress));
+}
+
 function makePlane(color = COLORS.cyan, scale = 1) {
   const group = new THREE.Group();
   const bodyMaterial = new THREE.MeshStandardMaterial({
@@ -136,6 +144,7 @@ function makeBuilding(x, z) {
     group.add(sign);
   }
 
+  group.userData.bounds = { width, depth, height };
   return group;
 }
 
@@ -162,12 +171,15 @@ export class FlightGame {
     this.player = { x: 0, y: 0, vx: 0, vy: 0, speed: 52, hits: 0, online: 0, offline: 0, boost: 0, item: 1, invincible: 0 };
     this.input = { targetX: 0, targetY: 0, throttle: 0, boosting: false, firing: false, steerX: 0, steerY: 0 };
     this.sensitivity = 1;
+    this.lookYaw = 0;
+    this.lookPitch = 0;
+    this.targetYaw = 0;
+    this.targetPitch = 0;
     this.timer = 180;
     this.bullets = [];
     this.effects = [];
     this.ai = [];
     this.buildings = [];
-    this.intersections = [];
     this.roadMarks = [];
     this.roadTime = 0;
     this.frame = this.frame.bind(this);
@@ -224,50 +236,15 @@ export class FlightGame {
           new THREE.BoxGeometry(0.08, 0.025, 4 + Math.random() * 2),
           new THREE.MeshBasicMaterial({ color: 0x9dc9c7, transparent: true, opacity: 0.25 }),
         );
-        mark.position.set(x, -13.97, -index * 25);
+        mark.position.set(x, -13.97, -index * 28);
         this.scene.add(mark);
         this.roadMarks.push(mark);
       }
     }
-
-    const crossingMaterial = new THREE.MeshStandardMaterial({ color: 0x17242a, metalness: 0.72, roughness: 0.24 });
-    for (let index = 0; index < 5; index += 1) {
-      const intersection = new THREE.Group();
-      intersection.position.z = -90 - index * 160;
-
-      const sideRoad = new THREE.Mesh(new THREE.PlaneGeometry(100, 26), crossingMaterial);
-      sideRoad.rotation.x = -Math.PI / 2;
-      sideRoad.position.y = -13.93;
-      intersection.add(sideRoad);
-
-      for (const z of [-5.5, 5.5]) {
-        const lane = new THREE.Mesh(
-          new THREE.BoxGeometry(96, 0.035, 0.08),
-          new THREE.MeshBasicMaterial({ color: z < 0 ? COLORS.cyan : COLORS.pink }),
-        );
-        lane.position.set(0, -13.86, z);
-        intersection.add(lane);
-      }
-
-      for (const z of [-11.5, 11.5]) {
-        for (let stripe = 0; stripe < 13; stripe += 1) {
-          const crosswalk = new THREE.Mesh(
-            new THREE.BoxGeometry(1.7, 0.04, 1.1),
-            new THREE.MeshBasicMaterial({ color: 0xb9d4cf, transparent: true, opacity: 0.62 }),
-          );
-          crosswalk.position.set(-15.6 + stripe * 2.6, -13.85, z);
-          intersection.add(crosswalk);
-        }
-      }
-
-      this.intersections.push(intersection);
-      this.scene.add(intersection);
-    }
   }
 
   addCity() {
-    for (let index = 0; index < 50; index += 1) {
-      if (index % 10 === 4 || index % 10 === 5) continue;
+    for (let index = 0; index < 52; index += 1) {
       const z = -18 - index * 16;
       for (const side of [-1, 1]) {
         this.buildings.push(makeBuilding(side * random(19, 33), z + random(-5, 5)));
@@ -332,6 +309,14 @@ export class FlightGame {
     this.player.vy = 0;
     this.input.targetX = 0;
     this.input.targetY = 0;
+    this.input.steerX = 0;
+    this.input.steerY = 0;
+    this.lookYaw = 0;
+    this.lookPitch = 0;
+    this.targetYaw = 0;
+    this.targetPitch = 0;
+    this.playerPlane.visible = true;
+    this.playerPlane.rotation.set(0, 0, 0);
     this.timer = 180;
     this.active = true;
     this.paused = false;
@@ -345,8 +330,16 @@ export class FlightGame {
   }
 
   steer(normalizedX, normalizedY) {
-    this.input.targetX = clamp(normalizedX, -0.92, 0.92) * 13 * this.sensitivity;
-    this.input.targetY = clamp(normalizedY, -0.8, 0.8) * 7 * this.sensitivity;
+    this.setView(normalizedX, normalizedY);
+  }
+
+  setView(normalizedX, normalizedY) {
+    const horizontal = clamp(normalizedX, -0.92, 0.92);
+    const vertical = clamp(normalizedY, -0.8, 0.8);
+    this.input.targetX = horizontal * 13 * this.sensitivity;
+    this.input.targetY = vertical * 7 * this.sensitivity;
+    this.targetYaw = horizontal * 0.78;
+    this.targetPitch = vertical * 0.48;
   }
 
   setSensitivity(value) {
@@ -390,20 +383,26 @@ export class FlightGame {
     this.onEvent(type, detail);
   }
 
-  shoot(fromPlayer = true, origin = null) {
-    const color = fromPlayer ? COLORS.cyan : COLORS.pink;
+  shoot(fromPlayer = true, origin = null, direction = null, ownerOverride = null) {
+    const owner = ownerOverride || (fromPlayer ? 'player' : 'ai');
+    const color = owner === 'ai' ? COLORS.pink : COLORS.cyan;
+    const shotDirection = direction?.clone().normalize()
+      || (fromPlayer ? this.camera.getWorldDirection(new THREE.Vector3()) : new THREE.Vector3(0, 0, 1));
+    const shotSpeed = owner === 'ai' ? 64 : 150;
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(fromPlayer ? 0.19 : 0.23, 8, 8),
+      new THREE.SphereGeometry(owner === 'ai' ? 0.23 : 0.19, 8, 8),
       new THREE.MeshBasicMaterial({ color }),
     );
     const light = new THREE.PointLight(color, 2.6, 7, 2);
     mesh.add(light);
-    mesh.position.copy(origin || this.playerPlane.position);
-    mesh.position.z += fromPlayer ? -2 : 1;
+    mesh.position.copy(origin || (fromPlayer ? this.camera.position : this.playerPlane.position));
+    mesh.position.addScaledVector(shotDirection, owner === 'ai' ? 1 : 2);
     this.scene.add(mesh);
-    this.bullets.push({ mesh, owner: fromPlayer ? 'player' : 'ai', speed: fromPlayer ? -150 : 64, life: 3 });
+    const velocity = shotDirection.clone().multiplyScalar(shotSpeed);
+    this.bullets.push({ mesh, owner, velocity, life: 3 });
     if (fromPlayer) this.emit('shot', {
       position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+      direction: { x: shotDirection.x, y: shotDirection.y, z: shotDirection.z },
     });
   }
 
@@ -426,8 +425,11 @@ export class FlightGame {
     this.emit('player-hit', { hits: this.player.hits, remote });
   }
 
-  addRemoteShot(origin) {
-    this.shoot(false, new THREE.Vector3(origin.x, origin.y, origin.z));
+  addRemoteShot(origin, shotDirection) {
+    const direction = shotDirection
+      ? new THREE.Vector3(shotDirection.x, shotDirection.y, shotDirection.z)
+      : new THREE.Vector3(0, 0, -1);
+    this.shoot(false, new THREE.Vector3(origin.x, origin.y, origin.z), direction, 'remote');
   }
 
   setRemoteState(state) {
@@ -466,17 +468,26 @@ export class FlightGame {
     player.speed = THREE.MathUtils.damp(player.speed, 52, 0.3, dt);
     const desiredX = this.input.targetX + this.input.steerX * 8 * this.sensitivity;
     const desiredY = this.input.targetY + this.input.steerY * 5 * this.sensitivity;
+    this.lookYaw = THREE.MathUtils.damp(this.lookYaw, this.targetYaw, 5, dt);
+    this.lookPitch = THREE.MathUtils.damp(this.lookPitch, this.targetPitch, 5, dt);
     player.vx = THREE.MathUtils.damp(player.vx, clamp((desiredX - player.x) * 2.8, -18, 18), 2.2, dt);
     player.vy = THREE.MathUtils.damp(player.vy, clamp((desiredY - player.y) * 2.2, -12, 12), 2.0, dt);
     player.x = clamp(player.x + player.vx * dt, -14, 14);
     player.y = clamp(player.y + player.vy * dt, -8, 9);
     this.playerPlane.position.set(player.x, player.y, 0);
+    this.playerPlane.rotation.y = THREE.MathUtils.damp(this.playerPlane.rotation.y, -this.lookYaw, 5, dt);
     this.playerPlane.rotation.z = THREE.MathUtils.damp(this.playerPlane.rotation.z, -player.vx * 0.035, 5, dt);
     this.playerPlane.rotation.x = THREE.MathUtils.damp(this.playerPlane.rotation.x, player.vy * 0.035, 4, dt);
 
-    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, player.x * 0.48, 2.2, dt);
-    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, player.y * 0.38 + 3.2, 2, dt);
-    this.camera.lookAt(player.x * 0.35, player.y * 0.28, -15);
+    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, player.x - Math.sin(this.lookYaw) * 8, 2.2, dt);
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, player.y + 3.2, 2, dt);
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, Math.cos(this.lookYaw) * 9, 2.2, dt);
+    const viewDirection = new THREE.Vector3(
+      Math.sin(this.lookYaw) * Math.cos(this.lookPitch),
+      Math.sin(this.lookPitch),
+      -Math.cos(this.lookYaw) * Math.cos(this.lookPitch),
+    );
+    this.camera.lookAt(this.camera.position.clone().addScaledVector(viewDirection, 60));
 
     if (player.invincible > 0) player.invincible -= dt;
     if (player.offline > 0) {
@@ -493,15 +504,12 @@ export class FlightGame {
 
     for (const building of this.buildings) {
       building.position.z += player.speed * dt;
-      if (building.position.z > 34) building.position.z -= 50 * 16;
+      if (building.position.z > 34) building.position.z -= 52 * 16;
     }
-    for (const intersection of this.intersections) {
-      intersection.position.z += player.speed * dt;
-      if (intersection.position.z > 42) intersection.position.z -= 50 * 16;
-    }
+    if (this.checkBuildingCollision()) return;
     for (const mark of this.roadMarks) {
       mark.position.z += player.speed * dt;
-      if (mark.position.z > 12) mark.position.z -= 25 * 32;
+      if (mark.position.z > 12) mark.position.z -= 28 * 32;
     }
 
     this.roadTime += dt;
@@ -562,22 +570,21 @@ export class FlightGame {
   updateBullets(dt) {
     for (let index = this.bullets.length - 1; index >= 0; index -= 1) {
       const bullet = this.bullets[index];
-      bullet.mesh.position.z += bullet.speed * dt;
+      const previousPosition = bullet.mesh.position.clone();
+      bullet.mesh.position.addScaledVector(bullet.velocity, dt);
       bullet.life -= dt;
       if (bullet.owner === 'player') {
         for (const ai of this.ai) {
           if (!ai.alive) continue;
-          const dx = bullet.mesh.position.x - ai.mesh.position.x;
-          const dy = bullet.mesh.position.y - ai.mesh.position.y;
-          const dz = bullet.mesh.position.z - ai.mesh.position.z;
-          if (dx * dx + dy * dy + dz * dz < 6.2) {
+          if (distanceSquaredToSegment(ai.mesh.position, previousPosition, bullet.mesh.position) < 6.2) {
             this.destroyAI(ai);
             bullet.life = 0;
             this.explosion(ai.mesh.position);
             break;
           }
         }
-        if (this.remotePlane.visible && bullet.life > 0 && bullet.mesh.position.distanceTo(this.remotePlane.position) < 2.3) {
+        if (this.remotePlane.visible && bullet.life > 0
+          && distanceSquaredToSegment(this.remotePlane.position, previousPosition, bullet.mesh.position) < 5.3) {
           bullet.life = 0;
           this.player.hits += 1;
           this.player.online += 1;
@@ -586,8 +593,8 @@ export class FlightGame {
           this.explosion(this.remotePlane.position);
         }
       } else {
-        const distance = bullet.mesh.position.distanceTo(this.playerPlane.position);
-        if (distance < 2.4 && this.player.offline <= 0) {
+        const distanceSquared = distanceSquaredToSegment(this.playerPlane.position, previousPosition, bullet.mesh.position);
+        if (distanceSquared < 5.8 && this.player.offline <= 0) {
           this.damagePlayer();
           this.explosion(this.playerPlane.position);
           bullet.life = 0;
@@ -598,6 +605,20 @@ export class FlightGame {
         this.bullets.splice(index, 1);
       }
     }
+  }
+
+  checkBuildingCollision() {
+    for (const building of this.buildings) {
+      const { width, depth, height } = building.userData.bounds;
+      const overlapsHorizontally = Math.abs(this.player.x - building.position.x) < width / 2 + 2.65;
+      const overlapsDepth = Math.abs(building.position.z) < depth / 2 + 1.1;
+      const overlapsVertically = this.player.y + 0.8 > -14 && this.player.y - 0.8 < height - 14;
+      if (!overlapsHorizontally || !overlapsDepth || !overlapsVertically) continue;
+      this.active = false;
+      this.onEvent('finish', { hits: this.player.hits, reason: 'crash' });
+      return true;
+    }
+    return false;
   }
 
   explosion(position) {

@@ -54,7 +54,7 @@ export class NetworkManager {
       if (!payload || typeof payload !== 'object') return;
       if (payload.type === 'state') this.onRemoteState(payload.state);
       else if (payload.type === 'chat') this.onMessage({ scope: 'room', ...payload.message });
-      else if (payload.type === 'shot') this.game?.addRemoteShot(payload.position);
+      else if (payload.type === 'shot') this.game?.addRemoteShot(payload.position, payload.direction);
       else if (payload.type === 'damage') this.game?.damagePlayer(true);
       else if (payload.type === 'score') this.onStatus({ opponentHits: payload.hits });
       else if (payload.type === 'hello') this.onStatus({ opponentName: payload.name });
