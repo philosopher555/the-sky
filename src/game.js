@@ -167,6 +167,7 @@ export class FlightGame {
     this.effects = [];
     this.ai = [];
     this.buildings = [];
+    this.intersections = [];
     this.roadMarks = [];
     this.roadTime = 0;
     this.frame = this.frame.bind(this);
@@ -223,15 +224,50 @@ export class FlightGame {
           new THREE.BoxGeometry(0.08, 0.025, 4 + Math.random() * 2),
           new THREE.MeshBasicMaterial({ color: 0x9dc9c7, transparent: true, opacity: 0.25 }),
         );
-        mark.position.set(x, -13.97, -index * 28);
+        mark.position.set(x, -13.97, -index * 25);
         this.scene.add(mark);
         this.roadMarks.push(mark);
       }
     }
+
+    const crossingMaterial = new THREE.MeshStandardMaterial({ color: 0x17242a, metalness: 0.72, roughness: 0.24 });
+    for (let index = 0; index < 5; index += 1) {
+      const intersection = new THREE.Group();
+      intersection.position.z = -90 - index * 160;
+
+      const sideRoad = new THREE.Mesh(new THREE.PlaneGeometry(100, 26), crossingMaterial);
+      sideRoad.rotation.x = -Math.PI / 2;
+      sideRoad.position.y = -13.93;
+      intersection.add(sideRoad);
+
+      for (const z of [-5.5, 5.5]) {
+        const lane = new THREE.Mesh(
+          new THREE.BoxGeometry(96, 0.035, 0.08),
+          new THREE.MeshBasicMaterial({ color: z < 0 ? COLORS.cyan : COLORS.pink }),
+        );
+        lane.position.set(0, -13.86, z);
+        intersection.add(lane);
+      }
+
+      for (const z of [-11.5, 11.5]) {
+        for (let stripe = 0; stripe < 13; stripe += 1) {
+          const crosswalk = new THREE.Mesh(
+            new THREE.BoxGeometry(1.7, 0.04, 1.1),
+            new THREE.MeshBasicMaterial({ color: 0xb9d4cf, transparent: true, opacity: 0.62 }),
+          );
+          crosswalk.position.set(-15.6 + stripe * 2.6, -13.85, z);
+          intersection.add(crosswalk);
+        }
+      }
+
+      this.intersections.push(intersection);
+      this.scene.add(intersection);
+    }
   }
 
   addCity() {
-    for (let index = 0; index < 52; index += 1) {
+    for (let index = 0; index < 50; index += 1) {
+      if (index % 10 === 4 || index % 10 === 5) continue;
       const z = -18 - index * 16;
       for (const side of [-1, 1]) {
         this.buildings.push(makeBuilding(side * random(19, 33), z + random(-5, 5)));
@@ -457,11 +493,15 @@ export class FlightGame {
 
     for (const building of this.buildings) {
       building.position.z += player.speed * dt;
-      if (building.position.z > 34) building.position.z -= 52 * 16;
+      if (building.position.z > 34) building.position.z -= 50 * 16;
+    }
+    for (const intersection of this.intersections) {
+      intersection.position.z += player.speed * dt;
+      if (intersection.position.z > 42) intersection.position.z -= 50 * 16;
     }
     for (const mark of this.roadMarks) {
       mark.position.z += player.speed * dt;
-      if (mark.position.z > 12) mark.position.z -= 28 * 32;
+      if (mark.position.z > 12) mark.position.z -= 25 * 32;
     }
 
     this.roadTime += dt;
