@@ -1,0 +1,6 @@
+node_modules/
+dist/
+skyline-deploy.zip
+.env
+.env.*
+!.env.example

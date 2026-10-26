@@ -1,0 +1,20 @@
+{
+  "name": "the-sky",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "package:zip": "npm run build && zip -qr -FS skyline-deploy.zip dist"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0",
+    "peerjs": "^1.5.5",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}
