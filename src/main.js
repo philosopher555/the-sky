@@ -64,6 +64,7 @@ interfaceRoot.innerHTML = `
 			<div class="hud-time"><span>剩余时间</span><strong id="hud-time">03:00</strong><div class="time-track"><i id="time-progress"></i></div></div>
 			<div class="hud-stat hud-speed"><span class="hud-label">速度</span><strong id="hud-speed">052</strong><span class="hud-unit">KM/H</span></div>
 			<div class="duel-score" id="duel-score" hidden>对手 <strong id="hud-opponent-hits">00</strong></div>
+			<button class="icon-button touch-toggle" data-action="touch-mode" aria-pressed="false" title="显示触控摇杆和按钮">触控</button>
 			<button class="icon-button pause-button" data-action="pause" title="暂停 (Esc)" aria-label="暂停">Ⅱ</button>
 		</div>
 		<div class="target-reticle"><i></i><b></b><span></span></div>
@@ -322,6 +323,9 @@ interfaceRoot.addEventListener('click', (event) => {
 		localStorage.setItem('skyline-selected-plane', plane);
 		document.querySelector('#coin-count').textContent = state.coins;
 		openPanel('shop');
+	} else if (action === 'touch-mode') {
+		const visible = document.querySelector('#game-hud').classList.toggle('touch-controls-visible');
+		button.setAttribute('aria-pressed', String(visible));
 	} else if (action === 'fire') game.setFiring(true);
 	else if (action === 'boost') game.setBoost(!game.input.boosting);
 });
@@ -382,7 +386,8 @@ function updateJoystick(event) {
 }
 
 document.addEventListener('pointermove', (event) => {
-	if (state.screen !== 'game' || event.pointerType !== 'mouse' || state.panel) return;
+	if (state.screen !== 'game' || event.pointerType !== 'mouse' || state.panel
+		|| document.querySelector('#joystick')?.hasPointerCapture(event.pointerId)) return;
 	const x = (event.clientX / window.innerWidth - 0.5) * 2;
 	const y = (event.clientY / window.innerHeight - 0.5) * 2;
 	game.steer(x, -y);
